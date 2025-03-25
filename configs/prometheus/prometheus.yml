@@ -1,0 +1,26 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+  
+  - job_name: 'vulnerable-redis'
+    static_configs:
+      - targets: ['vulnerable-redis-exporter:9121']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: environment
+        replacement: vulnerable
+
+  - job_name: 'secure-redis'
+    static_configs:
+      - targets: ['secure-redis-exporter:9122']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: environment
+        replacement: secure

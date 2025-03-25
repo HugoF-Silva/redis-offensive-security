@@ -1,0 +1,28 @@
+server {
+    listen 80;
+    server_name ${SECURE_DOMAIN};
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-XSS-Protection "1; mode=block";
+    add_header X-Content-Type-Options "nosniff";
+    add_header Referrer-Policy "strict-origin-when-cross-origin";
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;";
+
+    # Force all requests to go through the proxy
+    location / {
+        return 302 $scheme://$host/secure-info;
+    }
+
+    # Simple info page
+    location /secure-info {
+        default_type text/plain;
+        return 200 "Secure Redis Service\nThis service is protected by multiple security measures.\nAcces to Redis is only available through the Redis Proxy on port 6381 with proper authentication.\n";
+    }
+
+    # Block direct Redis access
+    location ~* ^/redis {
+        deny all;
+        return 403;
+    }
+}

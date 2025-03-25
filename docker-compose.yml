@@ -1,0 +1,235 @@
+version: '3.8'
+
+services:
+  # ========================
+  # Vulnerable Redis
+  # ========================
+  vulnerable-redis:
+    build:
+      context: ./configs/vulnerable-redis
+      dockerfile: Dockerfile
+    container_name: vulnerable-redis
+    restart: unless-stopped
+    networks:
+      - vulnerable_network
+    ports:
+      - "${VULNERABLE_REDIS_PORT:-6379}:6379"
+    volumes:
+      - ./logs/vulnerable-redis:/var/log/redis
+    environment:
+      - VULNERABLE_REDIS_PASSWORD=${VULNERABLE_REDIS_PASSWORD:-123}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${VULNERABLE_REDIS_PASSWORD:-123}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+  
+  vulnerable-redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: vulnerable-redis-exporter
+    restart: unless-stopped
+    networks:
+      - vulnerable_network
+      - monitoring_network
+    command:
+      - '--redis.addr=redis://vulnerable-redis:6379'
+      - '--redis.password=${VULNERABLE_REDIS_PASSWORD:-123}'
+      - '--web.listen-address=:9121'
+    depends_on:
+      - vulnerable-redis
+
+  # ========================
+  # Secure Redis
+  # ========================
+  secure-redis:
+    build:
+      context: ./configs/secure-redis
+      dockerfile: Dockerfile
+    container_name: secure-redis
+    restart: unless-stopped
+    networks:
+      - secure_network
+    ports:
+      - "127.0.0.1:${SECURE_REDIS_PORT:-6380}:6379"
+    volumes:
+      - ./configs/secure-redis/tls:/usr/local/etc/redis/tls
+      - ./logs/secure-redis:/var/log/redis
+    security_opt:
+      - apparmor=docker-secure-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "6379", "--tls", "--cert", "/usr/local/etc/redis/tls/client.crt", "--key", "/usr/local/etc/redis/tls/client.key", "--cacert", "/usr/local/etc/redis/tls/ca.crt", "-a", "${REDIS_ADMIN_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    environment:
+      - ADMIN_USER=${ADMIN_USER}
+      - REDIS_ADMIN_PASSWORD=${REDIS_ADMIN_PASSWORD}
+      - READONLY_USER=${READONLY_USER}
+      - REDIS_READONLY_PASSWORD=${REDIS_READONLY_PASSWORD}
+      - WRITEONLY_USER=${WRITEONLY_USER}
+      - REDIS_WRITEONLY_PASSWORD=${REDIS_WRITEONLY_PASSWORD}
+      - EXPORTER_USER=${EXPORTER_USER}
+      - REDIS_EXPORTER_PASSWORD=${REDIS_EXPORTER_PASSWORD}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ENCRYPTION_SALT=${ENCRYPTION_SALT}
+
+  secure-redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: secure-redis-exporter
+    restart: unless-stopped
+    networks:
+      - secure_network
+      - monitoring_network
+    command:
+      - '--redis.addr=rediss://secure-redis:6379'
+      - '--redis.user=${EXPORTER_USER:-exporter}'
+      - '--redis.password=${REDIS_EXPORTER_PASSWORD}'
+      - '--web.listen-address=:9122'
+      - '--redis.tls-client-key-file=/tls/client.key'
+      - '--redis.tls-client-cert-file=/tls/client.crt'
+      - '--redis.tls-ca-cert-file=/tls/ca.crt'
+    volumes:
+      - ./configs/secure-redis/tls:/tls:ro
+    depends_on:
+      - secure-redis
+
+  # ========================
+  # Fail2Ban for Security
+  # ========================
+  fail2ban:
+    build:
+      context: ./configs/fail2ban
+      dockerfile: Dockerfile
+    container_name: fail2ban
+    restart: unless-stopped
+    networks:
+      - secure_network
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./configs/fail2ban:/etc/fail2ban
+      - ./logs/secure-redis:/var/log/redis:ro
+      - ./logs/fail2ban:/var/log/fail2ban
+    depends_on:
+      - secure-redis
+
+  # ========================
+  # Redis Proxy for Secure Redis
+  # ========================
+  redis-proxy:
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile
+    container_name: redis-proxy
+    restart: unless-stopped
+    networks:
+      - secure_network
+      - proxy_network
+    ports:
+      - "${REDIS_PROXY_PORT:-6381}:6381"
+    environment:
+      - REDIS_HOST=secure-redis
+      - REDIS_PORT=6379
+      - PROXY_PORT=6381
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ENCRYPTION_SALT=${ENCRYPTION_SALT}
+      - REDIS_TLS_ENABLED=true
+      - REDIS_TLS_CA_CERT=/app/tls/ca.crt
+      - REDIS_TLS_CLIENT_CERT=/app/tls/client.crt
+      - REDIS_TLS_CLIENT_KEY=/app/tls/client.key
+    volumes:
+      - ./configs/secure-redis/tls:/app/tls:ro
+      - ./logs/redis-proxy:/app/logs
+    depends_on:
+      - secure-redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.connect(('127.0.0.1', 6381))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ========================
+  # Nginx for Web Access
+  # ========================
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    restart: unless-stopped
+    networks:
+      - monitoring_network
+      - proxy_network
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./configs/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./configs/nginx/sites:/etc/nginx/templates:ro
+      - ./configs/nginx/tls:/etc/nginx/tls:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - grafana
+      - prometheus
+      - redis-proxy
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ========================
+  # Monitoring
+  # ========================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    networks:
+      - monitoring_network
+      - vulnerable_network
+      - secure_network
+    volumes:
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    networks:
+      - monitoring_network
+    volumes:
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning
+      - ./configs/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - prometheus
+    ports:
+      - "127.0.0.1:3000:3000"
+
+
+
+
+networks:
+  vulnerable_network:
+    driver: bridge
+    name: vulnerable_network
+  secure_network:
+    driver: bridge
+    name: secure_network
+  monitoring_network:
+    driver: bridge
+    name: monitoring_network
+  proxy_network:
+    driver: bridge
+    name: proxy_network
+
+volumes:
+  prometheus_data:
+  grafana_data:

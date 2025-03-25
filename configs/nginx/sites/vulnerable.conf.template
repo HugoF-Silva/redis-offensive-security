@@ -1,0 +1,10 @@
+server {
+    listen 80;
+    server_name ${VULNERABLE_DOMAIN};
+
+    # Simple info page
+    location / {
+        default_type text/plain;
+        return 200 "Vulnerable Redis Service\nThis service is intentionally insecure for demonstration purposes.\nRedis is exposed directly on port 6379 with no authentication.\n";
+    }
+}
