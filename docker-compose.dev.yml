@@ -1,36 +1,140 @@
 version: '3.8'
 
+networks:
+  vulnerable_network:
+    name: ${VULNERABLE_NETWORK}
+  secure_network:
+    name: ${SECURE_NETWORK}
+  monitoring_network:
+    name: ${MONITORING_NETWORK}
+
 services:
   vulnerable-redis:
     build:
       context: ./vulnerable/redis
-    volumes:
-      - ./vulnerable/redis/redis.conf:/usr/local/etc/redis/redis.conf
-      - ./vulnerable/redis/data:/data
-      - ./vulnerable/redis/logs:/var/log/redis
-    networks:
-      - vulnerable-network
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     ports:
-      - "6379:6379"
+      - "${VULNERABLE_REDIS_PORT}:6379"
+    volumes:
+      - ./vulnerable/redis/data:/data
+    networks:
+      - vulnerable_network
+    restart: unless-stopped
+
+  vulnerable-redis-exporter:
+    image: oliver006/redis_exporter:latest
+    ports:
+      - "9121:9121"
     environment:
-      - REDIS_LOGFILE=/var/log/redis/redis-dev.log
-    restart: "no"
-    profiles: ["vulnerable", "all"]
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "200m"
-        max-file: "10"
+      - REDIS_ADDR=vulnerable-redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_EXPORTER_LOG_FORMAT=txt
+    depends_on:
+      - vulnerable-redis
+    networks:
+      - vulnerable_network
+      - monitoring_network
+    restart: unless-stopped
 
   vulnerable-backend:
     build:
       context: ./vulnerable/backend
+    ports:
+      - "${VULNERABLE_BACKEND_PORT}:8000"
     depends_on:
       - vulnerable-redis
-    networks:
-      - vulnerable-network
     environment:
       - REDIS_HOST=vulnerable-redis
       - REDIS_PORT=6379
-      - FLASK_ENV=development
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    networks:
+      - vulnerable_network
+    restart: unless-stopped
+
+  secure-redis:
+    build:
+      context: ./secure/redis
+    volumes:
+      - ./secure/redis/data:/data
+      - ./secure/redis/tls:/etc/ssl
+    networks:
+      - secure_network
+    restart: unless-stopped
+    cap_add:
+      - SYS_RESOURCE
+      - NET_ADMIN
+    security_opt:
+      - apparmor=unconfined
+
+  secure-redis-exporter:
+    image: oliver006/redis_exporter:latest
+    volumes:
+      - ./secure/redis/tls:/etc/ssl:ro
+    environment:
+      - REDIS_ADDR=secure-redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_EXPORTER_LOG_FORMAT=txt
+      - REDIS_EXPORTER_TLS_CLIENT_KEY_FILE=/etc/ssl/private/client.key
+      - REDIS_EXPORTER_TLS_CLIENT_CERT_FILE=/etc/ssl/certs/client.crt
+      - REDIS_EXPORTER_TLS_CA_CERT_FILE=/etc/ssl/certs/ca.crt
+      - REDIS_EXPORTER_SKIP_TLS_VERIFICATION=true
+    depends_on:
+      - secure-redis
+    networks:
+      - secure_network
+      - monitoring_network
+    restart: unless-stopped
+    
+  secure-backend:
+    build:
+      context: ./secure/backend
+    environment:
+      - REDIS_HOST=secure-redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_TLS_ENABLED=true
+      - REDIS_TLS_CERT_PATH=${TLS_CERT_PATH}
+      - REDIS_TLS_KEY_PATH=${TLS_KEY_PATH}
+      - REDIS_TLS_CA_CERT_PATH=${TLS_CA_CERT_PATH}
+    depends_on:
+      - secure-redis
+    networks:
+      - secure_network
+    restart: unless-stopped
+
+  secure-proxy:
+    build:
+      context: ./secure/proxy
+    ports:
+      - "127.0.0.1:${SECURE_BACKEND_PORT}:8080"
+    depends_on:
+      - secure-backend
+    networks:
+      - secure_network
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    networks:
+      - monitoring_network
+      - vulnerable_network
+      - secure_network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT}:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring_network
+    restart: unless-stopped
