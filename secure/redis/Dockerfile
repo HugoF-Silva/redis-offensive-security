@@ -42,16 +42,20 @@ RUN find /etc/ssl/private -type f -exec chmod 600 {} \; && \
 RUN systemctl enable fail2ban || echo "Fail2ban service not started in container"
 
 # Create firewall setup script
-RUN printf '#!/bin/bash\nif command -v iptables &> /dev/null; then\n  iptables -A INPUT -p tcp --dport 6379 -s 127.0.0.1 -j ACCEPT\n  iptables -A INPUT -p tcp --dport 6379 -j DROP\n  iptables -A INPUT -p tcp --dport 6380 -s 127.0.0.1 -j ACCEPT\n  iptables -A INPUT -p tcp --dport 6380 -j DROP\n  echo "Firewall rules applied"\nelse\n  echo "iptables not available, skipping firewall setup"\nfi\n' > /usr/local/bin/setup-firewall.sh && \
+RUN printf '#!/bin/bash\nif [ $(id -u) -eq 0 ]; then\n  iptables -A INPUT -p tcp --dport 6379 -s 127.0.0.1 -j ACCEPT\n  iptables -A INPUT -p tcp --dport 6379 -j DROP\n  iptables -A INPUT -p tcp --dport 6380 -s 127.0.0.1 -j ACCEPT\n  iptables -A INPUT -p tcp --dport 6380 -j DROP\n  echo "Firewall rules applied"\nelse\n  echo "Not running as root, skipping firewall setup"\nfi\n' > /usr/local/bin/setup-firewall.sh && \
     chmod +x /usr/local/bin/setup-firewall.sh
 
-# Create a non-root user for Redis
+# Create a non-root user for Redis (if it doesn't exist)
 RUN (id -g redis &>/dev/null || groupadd -r redis) && \
     (id -u redis &>/dev/null || useradd -r -g redis redis)
 RUN chown -R redis:redis /var/log/redis /data
 
-# Run as non-root user
-USER redis
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Keeping redis user for ownership but run as root for firewall
+USER root
 
 # Initialize data on startup
-CMD ["sh", "-c", "/usr/local/bin/setup-firewall.sh && /usr/local/bin/init_data.sh && redis-server /usr/local/etc/redis/redis.conf"]
+CMD ["/usr/local/bin/docker-entrypoint.sh"]
