@@ -94,10 +94,11 @@ services:
       - REDIS_HOST=secure-redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${DEV_SEC_REDIS_PASSWORD}
-      - REDIS_TLS_ENABLED=true
+      - REDIS_TLS_ENABLED=false  # Temporarily disable TLS
       - REDIS_TLS_CERT_PATH=${TLS_CERT_PATH}
       - REDIS_TLS_KEY_PATH=${TLS_KEY_PATH}
       - REDIS_TLS_CA_CERT_PATH=${TLS_CA_CERT_PATH}
+      - LOG_LEVEL=DEBUG  # Add debug logging
     depends_on:
       - secure-redis
     networks:
