@@ -47,7 +47,8 @@ requirepass $REDIS_PASSWORD
 maxmemory 500mb
 maxmemory-policy volatile-lru
 loglevel debug
-logfile stdout
+logfile ""
+daemonize no
 EOF
 
 # Log minimal config
@@ -59,4 +60,4 @@ log "If this works, we'll add more security features later"
 
 # Switch to redis user for running the server
 log "Switching to redis user..."
-exec chroot --userspec=redis:redis / redis-server /tmp/redis.conf
+exec su -s /bin/bash redis -c "redis-server /tmp/redis.conf"
