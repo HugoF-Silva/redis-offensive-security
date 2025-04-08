@@ -22,7 +22,7 @@ services:
     networks:
       - vulnerable_network
     restart: unless-stopped
-    
+
   vulnerable-redis-exporter:
     image: oliver006/redis_exporter:latest
     environment:
@@ -99,6 +99,8 @@ services:
       - REDIS_TLS_KEY_PATH=${TLS_KEY_PATH}
       - REDIS_TLS_CA_CERT_PATH=${TLS_CA_CERT_PATH}
       - LOG_LEVEL=DEBUG  # Add debug logging
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - CORS_ORIGINS=http://localhost:${DEV_SEC_BACKEND_PORT}
     depends_on:
       - secure-redis
     networks:
