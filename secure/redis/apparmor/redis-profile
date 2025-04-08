@@ -1,0 +1,41 @@
+#include <tunables/global>
+
+profile redis-server /usr/local/bin/redis-server {
+    #include <abstractions/base>
+    #include <abstractions/nameservice>
+
+    # Redis executable itself
+    /usr/local/bin/redis-server mr,
+
+    # Redis config
+    /usr/local/etc/redis/redis.conf r,
+    /etc/redis/users.acl r,
+
+    # Data directories
+    /data/ rw,
+    /data/** rwk,
+
+    # TLS certs
+    /etc/ssl/certs/ r,
+    /etc/ssl/certs/* r,
+    /etc/ssl/private/ r,
+    /etc/ssl/private/* r,
+
+    # Redis log file
+    /var/log/redis/ rw,
+    /var/log/redis/* rw,
+
+    # Socket
+    network inet stream,
+    network inet6 stream,
+    network tcp,
+
+    # System
+    /sys/kernel/mm/transparent_hugepage/enabled r,
+    /sys/devices/system/node/ r,
+    /proc/sys/net/core/somaxconn r,
+    /proc/*/status r,
+    /proc/lodavg r,
+    /proc/stat r,
+    /proc/sys/vm/overcommit_memory r
+}

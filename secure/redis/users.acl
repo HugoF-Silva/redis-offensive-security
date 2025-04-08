@@ -1,0 +1,12 @@
+# Redis ACL configuration file
+# Default user (kept for backward copatibility)
+user default on +@all -@dangerous ~* >123
+
+# Admin user with all permissions
+user admin on +@all ~* >admin123
+
+# App user with limited permissions
+user app on +@read +@write -@admin -@dangerous ~* >readwrite123
+
+# Read-Only user
+user readonly on +@read -@write -@admin -@dangerous ~* >read123

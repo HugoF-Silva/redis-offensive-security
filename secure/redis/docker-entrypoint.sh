@@ -6,13 +6,8 @@ log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') [DEBUG] $1"
 }
 
-# Run firewall setup if root
-if [ $(id -u) -eq 0 ]; then
-  log "Running as root, applying firewall rules..."
-  /usr/local/bin/setup-firewall.sh
-else
-  log "Not running as root, skipping firewall setup"
-fi
+# Skip firewall setup for troubleshooting
+log "Skipping firewall setup for troubleshooting connectivity"
 
 # Ensure Redis data directory exists and has proper permissions
 log "Setting up data directory..."
@@ -34,8 +29,7 @@ mkdir -p /etc/redis
 printf "user default on +@all -@dangerous ~* >$REDIS_PASSWORD" > /etc/redis/users.acl
 chown redis:redis /etc/redis/users.acl
 chmod 600 /etc/redis/users.acl
-log "ACL file content:"
-cat /etc/redis/users.acl
+log "ACL file created with password"
 
 # Create minimal Redis config
 log "Creating minimal Redis config..."
@@ -52,12 +46,21 @@ daemonize no
 EOF
 
 # Log minimal config
-log "Minimal config content:"
-cat /tmp/redis.conf
+log "Redis config created (password omitted for security)"
 
-log "Starting Redis with minimal config for testing..."
-log "If this works, we'll add more security features later"
+# Create a test script to verify Redis connectivity
+cat > /tmp/test_redis.sh << EOF
+#!/bin/bash
+sleep 5
+echo "Testing Redis connectivity..."
+redis-cli -h localhost -a "$REDIS_PASSWORD" ping
+echo "Testing network connectivity from inside container..."
+ping -c 1 secure-redis-exporter || echo "Cannot ping exporter"
+EOF
+chmod +x /tmp/test_redis.sh
 
-# Switch to redis user for running the server
-log "Switching to redis user..."
+# Run test script in background
+nohup /tmp/test_redis.sh > /tmp/test_output.log 2>&1 &
+
+log "Starting Redis with minimal config..."
 exec su -s /bin/bash redis -c "redis-server /tmp/redis.conf"

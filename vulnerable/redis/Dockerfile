@@ -5,4 +5,4 @@ COPY init_data.sh /usr/local/bin/init_data.sh
 
 RUN chmod +x /usr/local/bin/init_data.sh
 
-CMD ["sh", "-c", "/usr/local/bin/init_data.sh && redis-server /usr/local/etc/redis/redis.conf"]
+CMD ["sh", "-c", "redis-server /usr/local/etc/redis/redis.conf & sleep 5 && /usr/local/bin/init_data.sh && wait %1"]

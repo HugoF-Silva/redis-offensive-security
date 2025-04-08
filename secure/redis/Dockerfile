@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     fail2ban \
     iptables \
     apparmor \
+    gettext-base \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
@@ -54,8 +55,8 @@ RUN chown -R redis:redis /var/log/redis /data
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Keeping redis user for ownership but run as root for firewall
+# Let's keep redis user for ownership but run as root for firewall
 USER root
 
-# Initialize data on startup
+# Initialize data on startup using our entrypoint
 CMD ["/usr/local/bin/docker-entrypoint.sh"]

@@ -7,27 +7,46 @@ networks:
     name: ${SECURE_NETWORK}
   monitoring_network:
     name: ${MONITORING_NETWORK}
-
+  
 services:
-  # Vulnerable Setup
+  nginx-router:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx-router.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    networks:
+      - vulnerable_network
+      - secure_network
+      - monitoring_network
+    depends_on:
+      - vulnerable-backend
+      - secure-proxy
+      - grafana
+    restart: unless-stopped
+
   vulnerable-redis:
     build:
       context: ./vulnerable/redis
-    ports:
-      - "${DEV_VUL_REDIS_PORT}:6379"
+    expose:
+      - "6379"
     environment:
-      - REDIS_PASSWORD=${DEV_VUL_REDIS_PASSWORD}
+      - REDIS_PASSWORD=${PRE_VUL_REDIS_PASSWORD}
     volumes:
       - ./vulnerable/redis/data:/data
     networks:
       - vulnerable_network
     restart: unless-stopped
-    
+
   vulnerable-redis-exporter:
     image: oliver006/redis_exporter:latest
+    expose:
+      - "9121"
     environment:
       - REDIS_ADDR=vulnerable-redis:6379
-      - REDIS_PASSWORD=${DEV_VUL_REDIS_PASSWORD}
+      - REDIS_PASSWORD=${PRE_VUL_REDIS_PASSWORD}
       - REDIS_EXPORTER_LOG_FORMAT=txt
     depends_on:
       - vulnerable-redis
@@ -35,30 +54,27 @@ services:
       - vulnerable_network
       - monitoring_network
     restart: unless-stopped
-    command: 
-      - "--exclude-latency-histogram-metrics"
 
   vulnerable-backend:
     build:
       context: ./vulnerable/backend
-    ports:
-      - "${DEV_VUL_BACKEND_PORT}:8000"
+    expose:
+      - "8000"
     depends_on:
       - vulnerable-redis
     environment:
       - REDIS_HOST=vulnerable-redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${DEV_VUL_REDIS_PASSWORD}
+      - REDIS_PASSWORD=${PRE_VUL_REDIS_PASSWORD}
     networks:
       - vulnerable_network
     restart: unless-stopped
-
-  # Secure Setup
+  
   secure-redis:
     build:
       context: ./secure/redis
     environment:
-      - REDIS_PASSWORD=${DEV_SEC_REDIS_PASSWORD}
+      - REDIS_PASSWORD=${PRE_SEC_REDIS_PASSWORD}
     volumes:
       - ./secure/redis/data:/data
       - redis_certs:/etc/ssl
@@ -70,22 +86,21 @@ services:
       - NET_ADMIN
     security_opt:
       - apparmor=unconfined
-
+  
   secure-redis-exporter:
     image: oliver006/redis_exporter:latest
+    expose:
+      - "9121"
     environment:
       - REDIS_ADDR=secure-redis:6379
-      - REDIS_PASSWORD=${DEV_SEC_REDIS_PASSWORD}
+      - REDIS_PASSWORD=${PRE_SEC_REDIS_PASSWORD}
       - REDIS_EXPORTER_LOG_FORMAT=txt
-      - REDIS_EXPORTER_DEBUG=1
     depends_on:
       - secure-redis
     networks:
       - secure_network
       - monitoring_network
     restart: unless-stopped
-    command: 
-      - "--exclude-latency-histogram-metrics"
 
   secure-backend:
     build:
@@ -93,7 +108,7 @@ services:
     environment:
       - REDIS_HOST=secure-redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${DEV_SEC_REDIS_PASSWORD}
+      - REDIS_PASSWORD=${PRE_SEC_REDIS_PASSWORD}
       - REDIS_TLS_ENABLED=true
       - REDIS_TLS_CERT_PATH=${TLS_CERT_PATH}
       - REDIS_TLS_KEY_PATH=${TLS_KEY_PATH}
@@ -103,37 +118,36 @@ services:
     networks:
       - secure_network
     restart: unless-stopped
-
+  
   secure-proxy:
     build:
       context: ./secure/proxy
-    ports:
-      - "${DEV_SEC_BACKEND_PORT}:8080"
+    expose:
+      - "8080"
     depends_on:
       - secure-backend
     networks:
       - secure_network
     restart: unless-stopped
-
-  # Monitoring
+  
   prometheus:
     image: prom/prometheus:latest
-    ports:
-      - "${DEV_PROMETHEUS_PORT}:9090"
+    expose: 
+      - "9090"
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
     networks:
-      - monitoring_network
       - vulnerable_network
       - secure_network
+      - monitoring_network
     restart: unless-stopped
-
+  
   grafana:
     image: grafana/grafana:latest
-    ports:
-      - "${DEV_GRAFANA_PORT}:3000"
+    expose:
+      - "3000"
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
