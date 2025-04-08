@@ -1,46 +1,62 @@
 #!/bin/bash
 set -e
 
-# Run firewall setup first (only if root)
+# Function to print messages with timestamps
+log() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [DEBUG] $1"
+}
+
+# Run firewall setup if root
 if [ $(id -u) -eq 0 ]; then
-  echo "Running as root, applying firewall rules..."
+  log "Running as root, applying firewall rules..."
   /usr/local/bin/setup-firewall.sh
 else
-  echo "Not running as root, skipping firewall setup"
+  log "Not running as root, skipping firewall setup"
 fi
 
-# Check if ACL file exists
-if [ -f "/etc/redis/users.acl" ]; then
-  echo "ACL file exists at /etc/redis/users.acl"
-  ls -la /etc/redis/users.acl
-else
-  echo "WARNING: ACL file not found at /etc/redis/users.acl"
-  echo "Creating default ACL file..."
-  mkdir -p /etc/redis
-  echo "user default on +@all -@dangerous ~* >${REDIS_PASSWORD}" > /etc/redis/users.acl
-  cat /etc/redis/users.acl
-fi
+# Ensure Redis data directory exists and has proper permissions
+log "Setting up data directory..."
+mkdir -p /data
+chown -R redis:redis /data
+chmod 755 /data
 
-# Check SSL/TLS certificates
-echo "Checking TLS certificates..."
-if [ -f "/etc/ssl/certs/redis.crt" ] && [ -f "/etc/ssl/private/redis.key" ] && [ -f "/etc/ssl/certs/ca.crt" ]; then
-  echo "TLS certificates found"
-  ls -la /etc/ssl/certs/redis.crt /etc/ssl/private/redis.key /etc/ssl/certs/ca.crt
-else
-  echo "WARNING: TLS certificates not found"
-  echo "Generating certificates..."
-  /usr/local/bin/generate_certs.sh
-fi
-
-# Check Redis configuration
-echo "Redis configuration file:"
-grep -v "^#" /usr/local/etc/redis/redis.conf | grep -v "^$"
-
-# Create log directory if it doesn't exist
+# Create and set permissions for log directory
+log "Setting up log directory..."
 mkdir -p /var/log/redis
 touch /var/log/redis/redis.log
 chown -R redis:redis /var/log/redis
+chmod 755 /var/log/redis
+chmod 644 /var/log/redis/redis.log
 
-# Start Redis directly in foreground with configuration
-echo "Starting Redis server with configuration..."
-exec redis-server /usr/local/etc/redis/redis.conf
+# Create and populate ACL file
+log "Creating ACL file..."
+mkdir -p /etc/redis
+printf "user default on +@all -@dangerous ~* >$REDIS_PASSWORD" > /etc/redis/users.acl
+chown redis:redis /etc/redis/users.acl
+chmod 600 /etc/redis/users.acl
+log "ACL file content:"
+cat /etc/redis/users.acl
+
+# Create minimal Redis config
+log "Creating minimal Redis config..."
+cat > /tmp/redis.conf << EOF
+port 6379
+bind 0.0.0.0
+protected-mode yes
+requirepass $REDIS_PASSWORD
+maxmemory 500mb
+maxmemory-policy volatile-lru
+loglevel debug
+logfile stdout
+EOF
+
+# Log minimal config
+log "Minimal config content:"
+cat /tmp/redis.conf
+
+log "Starting Redis with minimal config for testing..."
+log "If this works, we'll add more security features later"
+
+# Switch to redis user for running the server
+log "Switching to redis user..."
+exec chroot --userspec=redis:redis / redis-server /tmp/redis.conf
