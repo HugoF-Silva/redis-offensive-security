@@ -54,6 +54,7 @@ RUN chown -R redis:redis /var/log/redis /data
 # Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/init_data.sh
 
 # Let's keep redis user for ownership but run as root for firewall
 USER root

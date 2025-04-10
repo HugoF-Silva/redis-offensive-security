@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Iinitialize with security metadata
 app = FastAPI(
-    title="Secure Redis Backend API",
+    title="Savio Seguranças",
     description="A secured API for Redis data access",
     version="1.0.0",
     docs_url="/docs",
@@ -172,6 +172,7 @@ class SessionData(BaseModel):
 # Security - API key validation
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+api_key_test = os.environ.get("SECURE_API_KEY")
 
 async def get_api_key(api_key:str = Security(api_key_header)):
     """Validate API key from header"""
@@ -187,7 +188,7 @@ async def get_api_key(api_key:str = Security(api_key_header)):
 # Routes
 @app.get("/")
 async def root():
-    return {"message": "Secure Redis Backend API"}
+    return {"message": "Savio Seguranças"}
 
 @app.get("/health")
 async def health_check():

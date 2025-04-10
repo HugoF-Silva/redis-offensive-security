@@ -62,5 +62,13 @@ chmod +x /tmp/test_redis.sh
 # Run test script in background
 nohup /tmp/test_redis.sh > /tmp/test_output.log 2>&1 &
 
-log "Starting Redis with minimal config..."
-exec su -s /bin/bash redis -c "redis-server /tmp/redis.conf"
+log "Starting Redis in background..."
+su -s /bin/bash redis -c "redis-server /tmp/redis.conf" &
+
+log "Waiting for Redis to be ready..."
+sleep 5
+
+log "Running data initialization..."
+REDIS_PASSWORD=$REDIS_PASSWORD /usr/local/bin/init_data.sh || log "Failed to initialize Redis data"
+
+wait

@@ -6,7 +6,7 @@ import uvicorn
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 
-app = FastAPI(title="Vulnerable Backend API")
+app = FastAPI(title="Sávio Inseguranças")
 
 redis_host = os.environ.get("REDIS_HOST", "localhost")
 redis_port = int(os.environ.get("REDIS_PORT", 6379))
@@ -36,7 +36,7 @@ class SessionData(BaseModel):
 
 @app.get("/")
 async def root():
-    return {"message", "Vulnerable Redis Backend API"}
+    return {"message", "Sávio Inseguranças"}
 
 @app.get("/health")
 async def health_check():
@@ -94,7 +94,7 @@ async def get_session(session_id: str):
 async def create_session(session: SessionData):
     # Vulnerable: No validation or security checks
     session_id = "".join(session.user_id[:4]) + "123"
-    redis_client.hset(f"Session:{session_id}", mapping=session.dict())
+    redis_client.hset(f"session:{session_id}", mapping=session.dict())
     return {"session_id": session_id, **session.dict()}
 
 @app.get("/dump")
