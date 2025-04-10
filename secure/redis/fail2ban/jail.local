@@ -1,0 +1,7 @@
+[redis]
+enabled = true
+filter = redis
+logpath = /var/log/redis/redis.log
+maxretry = 5
+findtime = 600
+bantime = 36000
